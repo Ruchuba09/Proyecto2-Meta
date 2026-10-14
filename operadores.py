@@ -1,3 +1,4 @@
+#Biblioteca modular de funciones (calculo de C_max , AG , AM ,ACS)
 """Lectura y evaluacion para el problema de flow shop permutacional."""
 
 from dataclasses import dataclass
