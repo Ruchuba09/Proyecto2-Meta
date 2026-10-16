@@ -6,6 +6,8 @@ import numpy as np
 import time
 import sys
 
+from convergencia import guardar_convergencia
+
 # se traen todas las funciones necesarias para AC
 from operadores import (
     leer_instancia, calcular_fitness, calcular_heuristica_pfsp,
@@ -15,7 +17,7 @@ from operadores import (
 ENCABEZADOS_RESULTADO = [
     "semilla", "metodo", "instancia", "n_hormigas", "iteraciones",
     "evaporacion_rho", "peso_heuristica_beta", "prob_limite_q0",
-    "tiempo_ejecucion", "mejor_makespan", "limite_superior", 
+    "tiempo_cpu", "mejor_makespan", "limite_superior",
     "rpd", "mejor_solucion"
 ]
 
@@ -33,22 +35,30 @@ def main() -> None:
     
     argumentos = parser.parse_args()
 
-    inicio = time.perf_counter()
-    
     # semillas rand
     random.seed(argumentos.semilla)
     np.random.seed(argumentos.semilla)
 
     raiz = Path(__file__).resolve().parent
     entrada = argumentos.entrada if argumentos.entrada.is_absolute() else raiz / argumentos.entrada
-    salida = argumentos.salida if argumentos.salida.is_absolute() else raiz / "resultados" / argumentos.salida
+    salida = argumentos.salida if argumentos.salida.is_absolute() else raiz / argumentos.salida
     salida.parent.mkdir(parents=True, exist_ok=True)
+    existe = salida.exists() and salida.stat().st_size > 0
+    if existe:
+        with salida.open("r", encoding="utf-8-sig", newline="") as archivo:
+            encabezado = next(csv.reader(archivo), [])
+        if encabezado != ENCABEZADOS_RESULTADO:
+            raise ValueError(
+                f"{salida} usa un formato CSV antiguo o incompatible; "
+                "elige otro archivo de salida"
+            )
 
     instancia = leer_instancia(entrada)
     tiempos = instancia.tiempos_procesamiento
     num_trabajos = instancia.trabajos
 
-   #logica para AC 
+    inicio = time.process_time()
+   #logica para AC
     secuencia_inicial = list(range(num_trabajos))
     random.shuffle(secuencia_inicial)
     cmax_inicial = calcular_fitness(tiempos, secuencia_inicial)
@@ -59,6 +69,7 @@ def main() -> None:
 
     mejor_secuencia_global = None
     mejor_cmax_global = float('inf')
+    historial = []
 
     for iteracion in range(argumentos.iteraciones):
         for h in range(argumentos.n_hormigas):
@@ -84,10 +95,13 @@ def main() -> None:
                 mejor_cmax_global = cmax_hormiga
                 mejor_secuencia_global = secuencia_hormiga[:]
 
+        historial.append(mejor_cmax_global)
         evaporacion_global(matriz_feromonas, mejor_secuencia_global, mejor_cmax_global, argumentos.rho)
 
-    tiempo_ejecucion = time.perf_counter() - inicio
-    existe = salida.exists() and salida.stat().st_size > 0
+    tiempo_cpu = time.process_time() - inicio
+    guardar_convergencia(
+        historial, "acs", entrada.stem, argumentos.semilla, salida, raiz
+    )
 
     with salida.open("a", encoding="utf-8", newline="") as archivo:
         escritor = csv.writer(archivo)
@@ -102,7 +116,7 @@ def main() -> None:
         escritor.writerow([
             argumentos.semilla, "acs", entrada.stem, argumentos.n_hormigas,
             argumentos.iteraciones, argumentos.rho, argumentos.beta, argumentos.q0,
-            round(tiempo_ejecucion, 4), mejor_cmax_global, 
+            round(tiempo_cpu, 4), mejor_cmax_global,
             instancia.limite_superior, round(rpd, 4) if rpd is not None else "", 
             list(mejor_secuencia_global)
         ])
